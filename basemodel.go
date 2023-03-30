@@ -224,8 +224,8 @@ func NewBaseModelWithCreated(dsn string, data interface{}) (*BaseModel, bool, er
 		if dbType != remoteType {
 			return nil, false, errors.New("Found local field " + db + "'s type '" + dbType + "' doesn't match remote column type:" + remoteType)
 		}
-		if strings.Contains(dbType, "not null") != (remote.IsNullable == "NO") {
-			return nil, false, errors.New("Found local field " + db + "'s nullability '" + strconv.FormatBool(strings.Contains(dbType, "not null")) + "' doesn't match remote column nullability :" + remote.IsNullable)
+		if strings.Contains(model.pgTypes[i], "not null") != (remote.IsNullable == "NO") {
+			return nil, false, errors.New("Found local field " + db + "'s nullability '" + model.pgTypes[i] + "' doesn't match remote column nullability :" + remote.IsNullable)
 		}
 	}
 

@@ -1,11 +1,9 @@
 package px
 
 import (
-	"database/sql"
 	"errors"
 	"reflect"
 	"strconv"
-	"time"
 
 	"github.com/StevenZack/tools/strToolkit"
 )
@@ -21,17 +19,17 @@ func ToPostgreType(t reflect.Type, dbTag string, length, limit int) (string, err
 		return "smallint not null default 0", nil
 	case reflect.Uint, reflect.Uint64:
 		if isId {
-			return "bigserial", nil
+			return "bigserial not null", nil
 		}
 		return "bigint not null default 0 check ( " + dbTag + ">-1 )", nil
 	case reflect.Uint32:
 		if isId {
-			return "serial", nil
+			return "serial not null", nil
 		}
 		return "integer not null default 0 check ( " + dbTag + ">-1 )", nil
 	case reflect.Uint16:
 		if isId {
-			return "smallserial", nil
+			return "smallserial not null", nil
 		}
 		return "smallint not null default 0 check ( " + dbTag + ">-1 )", nil
 	case reflect.Float64:
@@ -61,35 +59,35 @@ func ToPostgreType(t reflect.Type, dbTag string, length, limit int) (string, err
 		switch t.String() {
 		case "time.Time":
 			return "timestamp with time zone not null default '0001-01-01 00:00:00'", nil
-		case "sql.NullString":
-			if limit > 0 {
-				return "varchar(" + strconv.Itoa(limit) + ")", nil
-			}
-			return "text", nil
-		case "sql.NullBool":
-			return "boolean", nil
-		case "sql.NullInt32":
-			return "integer", nil
-		case "sql.NullInt64":
-			return "bigint", nil
-		case "sql.NullFloat64":
-			return "double precision", nil
-		case "sql.NullTime":
-			return "timestamp with time zone", nil
-		case "pq.Int64Array":
-			return "bigint[]", nil
-		case "pq.Int32Array":
-			return "integer[]", nil
-		case "pq.StringArray":
-			return "text[]", nil
-		case "pq.BoolArray":
-			return "boolean[]", nil
+			// case "sql.NullString":
+			// 	if limit > 0 {
+			// 		return "varchar(" + strconv.Itoa(limit) + ")", nil
+			// 	}
+			// 	return "text", nil
+			// case "sql.NullBool":
+			// 	return "boolean", nil
+			// case "sql.NullInt32":
+			// 	return "integer", nil
+			// case "sql.NullInt64":
+			// 	return "bigint", nil
+			// case "sql.NullFloat64":
+			// 	return "double precision", nil
+			// case "sql.NullTime":
+			// 	return "timestamp with time zone", nil
+			// case "pq.Int64Array":
+			// 	return "bigint[]", nil
+			// case "pq.Int32Array":
+			// 	return "integer[]", nil
+			// case "pq.StringArray":
+			// 	return "text[]", nil
+			// case "pq.BoolArray":
+			// 	return "boolean[]", nil
 		}
 	case reflect.Map:
 		return "jsonb", nil
 	case reflect.Ptr: // Pointer type
-
-		switch t.Elem().Kind() {
+		t = t.Elem()
+		switch t.Kind() {
 		case reflect.Int, reflect.Int64:
 			return "bigint", nil
 		case reflect.Int32:
@@ -104,7 +102,7 @@ func ToPostgreType(t reflect.Type, dbTag string, length, limit int) (string, err
 			if isId {
 				return "smallserial", nil
 			}
-			return "smallint check ( " + dbTag + ">-1 or "+dbTag+" = null)", nil
+			return "smallint check ( " + dbTag + ">-1 or " + dbTag + " = null)", nil
 		case reflect.Float64:
 			return "double precision", nil
 		case reflect.String:
@@ -117,6 +115,11 @@ func ToPostgreType(t reflect.Type, dbTag string, length, limit int) (string, err
 			return "text", nil
 		case reflect.Bool:
 			return "boolean", nil
+		case reflect.Struct:
+			switch t.String() {
+			case "time.Time":
+				return "timestamp with time zone", nil
+			}
 		}
 	}
 	return "", errors.New("unsupport field type:" + t.String() + ",kind=" + t.Kind().String())
@@ -139,26 +142,31 @@ func toPgPrimitiveType(dbType string) string {
 	return dbType
 }
 
-func NullString(s string) sql.NullString {
-	return sql.NullString{String: s, Valid: true}
+func String(s string) *string {
+	return &s
 }
 
-func NullInt32(i int32) sql.NullInt32 {
-	return sql.NullInt32{Int32: i, Valid: true}
+func Bool(b bool) *bool {
+	return &b
 }
-
-func NullInt64(i int64) sql.NullInt64 {
-	return sql.NullInt64{Int64: i, Valid: true}
+func Int(i int) *int {
+	return &i
 }
-
-func NullBool(b bool) sql.NullBool {
-	return sql.NullBool{Bool: b, Valid: true}
+func Uint(i uint) *uint {
+	return &i
 }
-
-func NullFloat64(f float64) sql.NullFloat64 {
-	return sql.NullFloat64{Float64: f, Valid: true}
+func Float(f float64) *float64 {
+	return &f
 }
-
-func NullTime(t time.Time) sql.NullTime {
-	return sql.NullTime{Time: t, Valid: true}
+func Int64(i int64) *int64 {
+	return &i
+}
+func Uint64(i uint64) *uint64 {
+	return &i
+}
+func Int32(i int32)*int32{
+	return &i
+}
+func Uint32(i uint32)*uint32{
+	return &i
 }
