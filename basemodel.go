@@ -556,7 +556,7 @@ func (b *BaseModel) CountWhere(where string, args ...interface{}) (int64, error)
 	return num, nil
 }
 
-func (b *BaseModel) UpdateSet(sets string, where string, args ...interface{}) (int64, error) {
+func (b *BaseModel) UpdateSet(where,sets string, args ...interface{}) (int64, error) {
 	where = toWhere(where)
 
 	query := `update ` + b.TableName + ` set ` + sets + where
