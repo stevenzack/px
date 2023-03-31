@@ -15,7 +15,6 @@ import (
 	"github.com/iancoleman/strcase"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/lib/pq"
 )
 
 type BaseModel struct {
@@ -420,10 +419,6 @@ func (b *BaseModel) Insert(v interface{}) (interface{}, error) {
 	args := []interface{}{}
 	for _, i := range argsIndex {
 		field := value.Field(i)
-		if field.Kind() == reflect.Slice {
-			args = append(args, pq.Array(field.Interface()))
-			continue
-		}
 		args = append(args, field.Interface())
 	}
 

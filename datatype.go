@@ -4,6 +4,7 @@ import (
 	"errors"
 	"reflect"
 	"strconv"
+	"time"
 
 	"github.com/StevenZack/tools/strToolkit"
 )
@@ -59,29 +60,29 @@ func ToPostgreType(t reflect.Type, dbTag string, length, limit int) (string, err
 		switch t.String() {
 		case "time.Time":
 			return "timestamp with time zone not null default '0001-01-01 00:00:00'", nil
-			// case "sql.NullString":
-			// 	if limit > 0 {
-			// 		return "varchar(" + strconv.Itoa(limit) + ")", nil
-			// 	}
-			// 	return "text", nil
-			// case "sql.NullBool":
-			// 	return "boolean", nil
-			// case "sql.NullInt32":
-			// 	return "integer", nil
-			// case "sql.NullInt64":
-			// 	return "bigint", nil
-			// case "sql.NullFloat64":
-			// 	return "double precision", nil
-			// case "sql.NullTime":
-			// 	return "timestamp with time zone", nil
-			// case "pq.Int64Array":
-			// 	return "bigint[]", nil
-			// case "pq.Int32Array":
-			// 	return "integer[]", nil
-			// case "pq.StringArray":
-			// 	return "text[]", nil
-			// case "pq.BoolArray":
-			// 	return "boolean[]", nil
+		case "sql.NullString":
+			if limit > 0 {
+				return "varchar(" + strconv.Itoa(limit) + ")", nil
+			}
+			return "text", nil
+		case "sql.NullBool":
+			return "boolean", nil
+		case "sql.NullInt32":
+			return "integer", nil
+		case "sql.NullInt64":
+			return "bigint", nil
+		case "sql.NullFloat64":
+			return "double precision", nil
+		case "sql.NullTime":
+			return "timestamp with time zone", nil
+		case "pq.Int64Array":
+			return "bigint[]", nil
+		case "pq.Int32Array":
+			return "integer[]", nil
+		case "pq.StringArray":
+			return "text[]", nil
+		case "pq.BoolArray":
+			return "boolean[]", nil
 		}
 	case reflect.Map:
 		return "jsonb", nil
@@ -143,12 +144,28 @@ func toPgPrimitiveType(dbType string) string {
 }
 
 func String(s string) *string {
+	if s == "" {
+		return nil
+	}
 	return &s
+}
+func StringCover(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 func Bool(b bool) *bool {
 	return &b
 }
+func BoolCover(b *bool) bool {
+	if b == nil {
+		return false
+	}
+	return *b == true
+}
+
 func Int(i int) *int {
 	return &i
 }
@@ -164,9 +181,20 @@ func Int64(i int64) *int64 {
 func Uint64(i uint64) *uint64 {
 	return &i
 }
-func Int32(i int32)*int32{
+func Int32(i int32) *int32 {
 	return &i
 }
-func Uint32(i uint32)*uint32{
+func Uint32(i uint32) *uint32 {
 	return &i
+}
+
+func Time(t time.Time) *time.Time {
+	return &t
+}
+
+func TimeCover(t *time.Time) time.Time {
+	if t == nil {
+		return time.Date(0, 0, 0, 0, 0, 0, 0, time.UTC)
+	}
+	return *t
 }

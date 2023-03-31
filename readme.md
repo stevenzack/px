@@ -14,70 +14,49 @@ go get -u github.com/StevenZack/pgx
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"log"
 	"time"
 
-	"github.com/StevenZack/pgx"
-	"github.com/lib/pq"
+	"github.com/StevenZack/px"
 )
 
 type User struct {
-	Id         uint32         `db:"id"`                       // serial
-	Name       string         `db:"name" limit:"32" index:""` // varchar(32) with index
-	Token      string         `db:"token" length:"32"`        // char(32)
-	Content    string         `db:"content"`                  // text
-	Tags       pq.StringArray `db:"tags"`                     // text[]
-	UpdateTime time.Time      `db:"update_time"`              // timestamp
-	CreateTime time.Time      `db:"create_time"`              //timestamp
+	Id          uint32            `db:"id"`                                     // serial not null primary key
+	PhoneNumber sql.NullString    `db:"phone_number" limit:"36" index:"unique"` // varchar(36) unique index
+	Info        map[string]string `db:"info"`                                   // jsonb
+	UpdateTime  time.Time         `db:"update_time" index:""`
+	CreateTime  time.Time         `db:"create_time"`
 }
 
-const (
-	dsn = `dbname=postgres user=postgres password=123456 host=localhost port=5432 sslmode=disable`
-)
+func init() {
+	log.SetFlags(log.Lshortfile)
+}
 
 func main() {
-	m, e := pgx.NewBaseModel(dsn, User{})
+
+	urlExample := "postgres://stevenzack:@localhost:5432/langenius"
+	c, e := px.NewBaseModel(urlExample, User{})
 	if e != nil {
 		log.Println(e)
 		return
 	}
-
-	id, e := m.Insert(User{
-		Name:       "Bob",
-		Token:      "12345678901234567890123456789012",
-		Content:    "asd",
-		Tags:       []string{"male"},
-		UpdateTime: time.Now(),
-		CreateTime: time.Now(),
+	id, e := c.Insert(User{
+		PhoneNumber: sql.NullString{Valid: true, String: "asd"},
 	})
 	if e != nil {
-		log.Fatal(e)
+		log.Println(e)
+		return
 	}
-	fmt.Println("inserted id=", id)
+	fmt.Println("inserted: ", id)
 
-	// find one user
-	user, e := m.FindWhere("id=$1", id.(uint32))
+	v, e := c.Find(id)
 	if e != nil {
-		log.Fatal(e)
+		log.Println(e)
+		return
 	}
-	fmt.Println("findWhere: ", user.(*User))
-
-	// find one user using index: 'name'
-	user, e = m.FindWhere("name=$1", "Bob")
-	if e != nil {
-		log.Fatal(e)
-	}
-	fmt.Println("findWhere by index:", user.(*User))
-
-	// query multiple users
-	users, e := m.QueryWhere("tags && $1", pq.StringArray{"male"})
-	if e != nil {
-		log.Fatal(e)
-	}
-	for i, user := range users.([]*User) {
-		fmt.Println(i, user)
-	}
+	fmt.Println(v)
 }
 
 ```
