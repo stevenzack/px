@@ -1,4 +1,4 @@
-module github.com/StevenZack/pgx
+module github.com/StevenZack/px
 
 go 1.15
 
