@@ -445,8 +445,8 @@ func (b *BaseModel) Find(id interface{}) (interface{}, error) {
 	query = query + ` where ` + b.dbTags[0] + `=$1`
 	e := b.Pool.QueryRow(context.Background(), query, id).Scan(fieldArgs...)
 	if e != nil {
-		if e == sql.ErrNoRows {
-			return nil, e
+		if strings.Contains(e.Error(), "no rows") {
+			return nil, sql.ErrNoRows
 		}
 		return nil, fmt.Errorf("%w:%s", e, query)
 	}
@@ -468,8 +468,8 @@ func (b *BaseModel) FindWhere(where string, args ...interface{}) (interface{}, e
 	}
 	e := b.Pool.QueryRow(context.Background(), query, args...).Scan(fieldArgs...)
 	if e != nil {
-		if e == sql.ErrNoRows {
-			return nil, e
+		if strings.Contains(e.Error(), "no rows") {
+			return nil, sql.ErrNoRows
 		}
 		return nil, fmt.Errorf("%w:%s", e, query)
 	}
@@ -518,8 +518,8 @@ func (b *BaseModel) Exists(id interface{}) (bool, error) {
 	query := `select 1 from ` + b.TableName + ` where ` + b.dbTags[0] + `=$1 limit 1`
 	e := b.Pool.QueryRow(context.Background(), query, id).Scan(&num)
 	if e != nil {
-		if e == sql.ErrNoRows {
-			return false, nil
+		if strings.Contains(e.Error(), "no rows") {
+			return false, sql.ErrNoRows
 		}
 		return false, fmt.Errorf("%w:%s", e, query)
 	}
@@ -535,8 +535,8 @@ func (b *BaseModel) ExistsWhere(where string, args ...interface{}) (bool, error)
 	query := `select 1 from ` + b.TableName + where + ` limit 1`
 	e := b.Pool.QueryRow(context.Background(), query, args...).Scan(&num)
 	if e != nil {
-		if e == sql.ErrNoRows {
-			return false, nil
+		if strings.Contains(e.Error(), "no rows") {
+			return false, sql.ErrNoRows
 		}
 		return false, fmt.Errorf("%w:%s", e, query)
 	}
@@ -556,7 +556,7 @@ func (b *BaseModel) CountWhere(where string, args ...interface{}) (int64, error)
 	return num, nil
 }
 
-func (b *BaseModel) UpdateSet(where,sets string, args ...interface{}) (int64, error) {
+func (b *BaseModel) UpdateSet(where, sets string, args ...interface{}) (int64, error) {
 	where = toWhere(where)
 
 	query := `update ` + b.TableName + ` set ` + sets + where
