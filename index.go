@@ -14,8 +14,9 @@ import (
 
 type (
 	indexModel struct {
-		unique bool
-		keys   []indexKey
+		isPrimaryKey bool
+		unique       bool
+		keys         []indexKey
 	}
 	indexKey struct {
 		lower    bool
@@ -49,14 +50,23 @@ func (i *indexModel) ToIndexName(tableName string) string {
 	buf.WriteString("idx")
 	return buf.String()
 }
-
-func toIndexModels(indexes map[string]string) ([]indexModel, error) {
+func (i *indexModel) JoinKeys(sep string) string {
+	builder := new(strings.Builder)
+	for index, v := range i.keys {
+		builder.WriteString(v.key)
+		if index < len(i.keys)-1 {
+			builder.WriteString(sep)
+		}
+	}
+	return builder.String()
+}
+func toIndexModels(indexes map[string]string) (*indexModel, []indexModel, error) {
 	imodels := []indexModel{}
 	groupMap := make(map[string]indexModel)
 	for key, index := range indexes {
 		vs, e := url.ParseQuery(strings.ReplaceAll(index, ",", "&"))
 		if e != nil {
-			return nil, errors.New("field '" + key + "', invalid index tag format:" + index)
+			return nil, nil, errors.New("field '" + key + "', invalid index tag format:" + index)
 		}
 
 		imodel := indexModel{}
@@ -67,7 +77,7 @@ func toIndexModels(indexes map[string]string) ([]indexModel, error) {
 			switch k {
 			case "single":
 				if len(imodel.keys) > 0 {
-					return nil, errors.New("field '" + key + "': duplicated key 'single'")
+					return nil, nil, errors.New("field '" + key + "': duplicated key 'single'")
 				}
 				indexKey := indexKey{
 					key:      key,
@@ -84,7 +94,7 @@ func toIndexModels(indexes map[string]string) ([]indexModel, error) {
 			case "lower":
 				lower = v == "true"
 			default:
-				return nil, errors.New("field '" + key + "', unsupported key:" + k)
+				return nil, nil, errors.New("field '" + key + "', unsupported key:" + k)
 			}
 		}
 
@@ -110,6 +120,12 @@ func toIndexModels(indexes map[string]string) ([]indexModel, error) {
 		//group index
 		before, ok := groupMap[group]
 		if !ok {
+			if strings.HasPrefix(group, "pkey") {
+				before.isPrimaryKey = true
+				before.keys = append(before.keys, indexKey{
+					key: "id",
+				})
+			}
 			before.keys = append(before.keys, indexKey{
 				key:      strToolkit.SubBefore(key, ",", key),
 				sequence: "asc",
@@ -118,6 +134,7 @@ func toIndexModels(indexes map[string]string) ([]indexModel, error) {
 			if strings.HasPrefix(group, "unique") {
 				before.unique = true
 			}
+
 			groupMap[group] = before
 			continue
 		}
@@ -132,11 +149,16 @@ func toIndexModels(indexes map[string]string) ([]indexModel, error) {
 	}
 
 	//add group indexes
+	var primaryKeyModel *indexModel
 	for _, v := range groupMap {
+		if v.isPrimaryKey {
+			primaryKeyModel = &v
+			continue
+		}
 		sort.Sort(sortByIndexKey(v.keys))
 		imodels = append(imodels, v)
 	}
-	return imodels, nil
+	return primaryKeyModel, imodels, nil
 }
 
 // createIndexFromField create index with format like: map[column_name]"single=asc,unique=true,lower=true,group=unique"

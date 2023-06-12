@@ -60,3 +60,12 @@ func main() {
 }
 
 ```
+
+# Group primary key
+
+```go
+type Follow struct{
+	Id 	uint64 	`db:"id"`
+	Target	uint64	`db:"target" index:"group=pkey"` // primary key (id,target)
+}
+```

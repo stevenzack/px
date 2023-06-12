@@ -77,6 +77,7 @@ func NewBaseModelWithCreated(dsn string, data interface{}) (*BaseModel, bool, er
 	}
 
 	indexes := make(map[string]string)
+
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
 		if i == 0 {
@@ -136,7 +137,7 @@ func NewBaseModelWithCreated(dsn string, data interface{}) (*BaseModel, bool, er
 		model.dbTags = append(model.dbTags, dbTag)
 		model.pgTypes = append(model.pgTypes, pgType)
 	}
-	localIndexList, e := toIndexModels(indexes)
+	primaryKeyModel, localIndexList, e := toIndexModels(indexes)
 	if e != nil {
 		log.Println(e)
 		return nil, false, e
@@ -177,7 +178,7 @@ func NewBaseModelWithCreated(dsn string, data interface{}) (*BaseModel, bool, er
 
 	//create table
 	if len(remoteColumnList) == 0 {
-		e = model.createTable()
+		e = model.createTable(primaryKeyModel)
 		if e != nil {
 			log.Println(e)
 			return nil, false, e
@@ -299,8 +300,8 @@ func NewBaseModelWithCreated(dsn string, data interface{}) (*BaseModel, bool, er
 	return model, created, nil
 }
 
-func (b *BaseModel) createTable() error {
-	query := b.GetCreateTableSQL()
+func (b *BaseModel) createTable(primaryKeyModel *indexModel) error {
+	query := b.GetCreateTableSQL(primaryKeyModel)
 	_, e := b.Pool.Exec(context.Background(), query)
 	if e != nil {
 		return fmt.Errorf("%w: %s", e, query)
@@ -326,20 +327,24 @@ func (b *BaseModel) dropColumn(name string) error {
 	return nil
 }
 
-func (b *BaseModel) GetCreateTableSQL() string {
+func (b *BaseModel) GetCreateTableSQL(primaryKeyModel *indexModel) string {
 	builder := new(strings.Builder)
 	builder.WriteString(`create table ` + b.Schema + `.` + b.TableName + ` (`)
 	for i, dbTag := range b.dbTags {
 		builder.WriteString(dbTag + " ")
 		builder.WriteString(b.pgTypes[i])
-		if i == 0 {
+		if i == 0 && primaryKeyModel == nil {
 			builder.WriteString(" primary key")
 		}
 		if i < len(b.dbTags)-1 {
 			builder.WriteString(",")
 		}
 	}
+	if primaryKeyModel != nil {
+		builder.WriteString(", primary key (" + primaryKeyModel.JoinKeys(",") + ")")
+	}
 	builder.WriteString(`)`)
+	log.Println(builder.String())
 	return builder.String()
 }
 
@@ -558,7 +563,6 @@ func (b *BaseModel) CountWhere(where string, args ...interface{}) (int64, error)
 
 func (b *BaseModel) UpdateSet(where, sets string, args ...interface{}) (int64, error) {
 	where = toWhere(where)
-
 	query := `update ` + b.TableName + ` set ` + sets + where
 	result, e := b.Pool.Exec(context.Background(), query, args...)
 	if e != nil {
