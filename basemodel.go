@@ -37,6 +37,13 @@ var (
 	AutoDropColumn = false
 )
 
+func MustNewBaseModel(dsn string, data interface{}) *BaseModel {
+	v, e := NewBaseModel(dsn, data)
+	if e != nil {
+		log.Fatal(e)
+	}
+	return v
+}
 func NewBaseModel(dsn string, data interface{}) (*BaseModel, error) {
 	model, _, e := NewBaseModelWithCreated(dsn, data)
 	return model, e
