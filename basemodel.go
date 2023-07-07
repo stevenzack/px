@@ -34,27 +34,28 @@ const (
 )
 
 var (
+	AutoCheckTable = false
 	AutoDropColumn = false
 )
 
-func MustNewBaseModel(dsn string, data interface{}) *BaseModel {
+func MustNewBaseModel(dsn string, data any) *BaseModel {
 	v, e := NewBaseModel(dsn, data)
 	if e != nil {
 		log.Fatal(e)
 	}
 	return v
 }
-func NewBaseModel(dsn string, data interface{}) (*BaseModel, error) {
+func NewBaseModel(dsn string, data any) (*BaseModel, error) {
 	model, _, e := NewBaseModelWithCreated(dsn, data)
 	return model, e
 }
 
-func NewBaseModelWithCreated(dsn string, data interface{}) (*BaseModel, bool, error) {
+func NewBaseModelWithCreated(dsn string, data any) (*BaseModel, bool, error) {
 	created := false
 	t := reflect.TypeOf(data)
 	dsnURL, e := url.Parse(dsn)
 	if e != nil {
-		log.Println(e)
+		log.Println(e, dsn)
 		return nil, false, e
 	}
 
@@ -150,157 +151,165 @@ func NewBaseModelWithCreated(dsn string, data interface{}) (*BaseModel, bool, er
 		return nil, false, e
 	}
 
-	//desc
-	remoteColumnList, e := DescTable(model.Pool, model.Database, model.Schema, model.TableName)
-	if e != nil {
-		if !strings.Contains(e.Error(), fmt.Sprintf(`database "%s" does not exist`, model.Database)) {
-			log.Println(e)
-			return nil, false, e
-		}
-		// database not exists
-		dsnURL.Path = "/postgres"
-		pool, e := pgx.Connect(context.Background(), dsnURL.String())
-		if e != nil {
-			log.Println(e)
-			return nil, false, e
-		}
-		s := "create database " + model.Database
-		_, e = pool.Exec(context.Background(), s)
-		if e != nil {
-			log.Println(e)
-			return nil, false, e
-		}
-		e = pool.Close(context.Background())
-		if e != nil {
-			log.Println(e)
-			return nil, false, e
-		}
+	if AutoCheckTable {
 
-		model.Pool, e = pgxpool.New(context.Background(), dsn)
+		//desc
+		remoteColumnList, e := DescTable(model.Pool, model.Database, model.Schema, model.TableName)
 		if e != nil {
-			log.Println(e)
-			return nil, false, e
-		}
-	}
-
-	//create table
-	if len(remoteColumnList) == 0 {
-		e = model.createTable(primaryKeyModel)
-		if e != nil {
-			log.Println(e)
-			return nil, false, e
-		}
-		//create index
-		e = model.createIndexFromField(localIndexList)
-		if e != nil {
-			log.Println(e)
-			return nil, false, e
-		}
-		return model, true, nil
-	}
-
-	// columns check
-	remoteColumns := make(map[string]Column)
-	for _, c := range remoteColumnList {
-		remoteColumns[c.ColumnName] = c
-	}
-
-	// local columns to be created
-	localColumns := make(map[string]string)
-	for i, db := range model.dbTags {
-		localColumns[db] = model.pgTypes[i]
-
-		remote, ok := remoteColumns[db]
-		if !ok {
-			//auto-create field on remote database
-			log.Println("Remote column '" + db + "' to be created")
-			e = model.addColumn(db, model.pgTypes[i])
+			if !strings.Contains(e.Error(), fmt.Sprintf(`database "%s" does not exist`, model.Database)) {
+				log.Println(e)
+				return nil, false, e
+			}
+			// database not exists
+			dsnURL.Path = "/postgres"
+			pool, e := pgx.Connect(context.Background(), dsnURL.String())
 			if e != nil {
 				log.Println(e)
 				return nil, false, e
 			}
-			continue
+			s := "create database " + model.Database
+			_, e = pool.Exec(context.Background(), s)
+			if e != nil {
+				log.Println(e)
+				return nil, false, e
+			}
+			e = pool.Close(context.Background())
+			if e != nil {
+				log.Println(e)
+				return nil, false, e
+			}
+
+			model.Pool, e = pgxpool.New(context.Background(), dsn)
+			if e != nil {
+				log.Println(e)
+				return nil, false, e
+			}
 		}
 
-		//type check
-		dbType := toPgPrimitiveType(model.pgTypes[i])
-		remoteType := strToolkit.SubBefore(remote.DataType, " ", remote.DataType)
-		if strings.HasSuffix(dbType, "[]") {
-			dbType = "ARRAY"
+		//create table
+		if len(remoteColumnList) == 0 {
+			e = model.createTable(primaryKeyModel)
+			if e != nil {
+				log.Println(e)
+				return nil, false, e
+			}
+			//create index
+			e = model.createIndexFromField(localIndexList)
+			if e != nil {
+				log.Println(e)
+				return nil, false, e
+			}
+			return model, true, nil
 		}
-		if dbType != remoteType {
-			return nil, false, errors.New("Found local field " + db + "'s type '" + dbType + "' doesn't match remote column type:" + remoteType)
-		}
-		if strings.Contains(model.pgTypes[i], "not null") != (remote.IsNullable == "NO") {
-			return nil, false, errors.New("Found local field " + db + "'s nullability '" + model.pgTypes[i] + "' doesn't match remote column nullability :" + remote.IsNullable)
-		}
-	}
 
-	//remote columns to be dropped
-	for _, remote := range remoteColumnList {
-		_, ok := localColumns[remote.ColumnName]
-		if !ok {
-			if AutoDropColumn {
-				//auto-drop remote column
-				log.Println("Remote column '" + remote.ColumnName + "' to be dropped")
-				e = model.dropColumn(remote.ColumnName)
+		// columns check
+		remoteColumns := make(map[string]Column)
+		for _, c := range remoteColumnList {
+			remoteColumns[c.ColumnName] = c
+		}
+
+		// local columns to be created
+		localColumns := make(map[string]string)
+		for i, db := range model.dbTags {
+			localColumns[db] = model.pgTypes[i]
+
+			remote, ok := remoteColumns[db]
+			if !ok {
+				//auto-create field on remote database
+				log.Println("Remote column '" + db + "' to be created")
+				e = model.addColumn(db, model.pgTypes[i])
 				if e != nil {
 					log.Println(e)
 					return nil, false, e
 				}
 				continue
 			}
-			return nil, false, errors.New("Remote column '" + remote.ColumnName + "' to be dropped")
-		}
-	}
 
-	// index check
-	remoteIndexList, e := model.GetIndexes()
-	if e != nil {
-		log.Println(e)
-		return nil, false, e
-	}
-	remoteIndexes := make(map[string]IndexSchema)
-	for _, remote := range remoteIndexList {
-		remoteIndexes[remote.IndexName] = remote
-	}
-
-	// indexes to be created
-	localIndexes := make(map[string]indexModel)
-	for _, local := range localIndexList {
-		localIndexes[local.ToIndexName(model.TableName)] = local
-		remote, ok := remoteIndexes[local.ToIndexName(model.TableName)]
-		if !ok {
-			//auto-create index on remote database
-			log.Println("Remote index '" + local.ToIndexName(model.TableName) + "' to be created")
-			e = model.createIndex(local)
-			if e != nil {
-				log.Println(e)
-				return nil, false, e
+			//type check
+			dbType := toPgPrimitiveType(model.pgTypes[i])
+			remoteType := strToolkit.SubBefore(remote.DataType, " ", remote.DataType)
+			if strings.HasSuffix(dbType, "[]") {
+				dbType = "ARRAY"
 			}
-			continue
-		}
-
-		//unique check
-		if local.unique != strings.Contains(remote.IndexDef, "UNIQUE") {
-			return nil, false, errors.New("Index '" + local.ToIndexName(model.TableName) + "' unique option is inconsistant with remote database: " + strconv.FormatBool(local.unique) + " vs " + strconv.FormatBool(strings.Contains(remote.IndexDef, "UNIQUE")))
-		}
-	}
-
-	//indexes to be dropped
-	for _, remote := range remoteIndexList {
-		if strings.Contains(remote.IndexName, "_pkey") {
-			continue
-		}
-		_, ok := localIndexes[remote.IndexName]
-		if !ok {
-			log.Println("Remote index '" + remote.IndexName + "' to be dropped")
-			e = model.dropIndex(remote.IndexName)
-			if e != nil {
-				log.Println(e)
-				return nil, false, e
+			if dbType != remoteType {
+				return nil, false, errors.New("Found local field " + db + "'s type '" + dbType + "' doesn't match remote column type:" + remoteType)
 			}
-			continue
+			if strings.Contains(model.pgTypes[i], "not null") != (remote.IsNullable == "NO") {
+				return nil, false, errors.New("Found local field " + db + "'s nullability '" + model.pgTypes[i] + "' doesn't match remote column nullability :" + remote.IsNullable)
+			}
+		}
+
+		//remote columns to be dropped
+		for _, remote := range remoteColumnList {
+			_, ok := localColumns[remote.ColumnName]
+			if !ok {
+				if AutoDropColumn {
+					//auto-drop remote column
+					log.Println("Remote column '" + remote.ColumnName + "' to be dropped")
+					e = model.dropColumn(remote.ColumnName)
+					if e != nil {
+						log.Println(e)
+						return nil, false, e
+					}
+					continue
+				}
+				return nil, false, errors.New("Remote column '" + remote.ColumnName + "' to be dropped")
+			}
+		}
+
+		// index check
+		remoteIndexList, e := model.GetIndexes()
+		if e != nil {
+			log.Println(e)
+			return nil, false, e
+		}
+		remoteIndexes := make(map[string]IndexSchema)
+		for _, remote := range remoteIndexList {
+			remoteIndexes[remote.IndexName] = remote
+		}
+
+		// indexes to be created
+		localIndexes := make(map[string]indexModel)
+		for _, local := range localIndexList {
+			localIndexes[local.ToIndexName(model.TableName)] = local
+			remote, ok := remoteIndexes[local.ToIndexName(model.TableName)]
+			if !ok {
+				//auto-create index on remote database
+				log.Println("Remote index '" + local.ToIndexName(model.TableName) + "' to be created")
+				e = model.createIndex(local)
+				if e != nil {
+					log.Println(e)
+					return nil, false, e
+				}
+				continue
+			}
+
+			//unique check
+			if local.unique != strings.Contains(remote.IndexDef, "UNIQUE") {
+				return nil, false, errors.New("Index '" + local.ToIndexName(model.TableName) + "' unique option is inconsistant with remote database: " + strconv.FormatBool(local.unique) + " vs " + strconv.FormatBool(strings.Contains(remote.IndexDef, "UNIQUE")))
+			}
+		}
+
+		//indexes to be dropped
+		for _, remote := range remoteIndexList {
+			log.Println(remote.IndexName)
+			if strings.Contains(remote.IndexName, "_pkey") {
+				continue
+			}
+
+			_, ok := localIndexes[remote.IndexName]
+			if !ok {
+				if !strToolkit.SliceContains(model.dbTags, convertIndexToFieldName(model.TableName, remote.IndexName)) {
+					continue
+				}
+				log.Println("Remote index '" + remote.IndexName + "' to be dropped")
+				e = model.dropIndex(remote.IndexName)
+				if e != nil {
+					log.Println(e)
+					return nil, false, e
+				}
+				continue
+			}
 		}
 	}
 
@@ -403,7 +412,7 @@ func (b *BaseModel) GetSelectSQL() ([]int, string) {
 	builder.WriteString(`select `)
 	fieldIndexes := []int{}
 	for i, dbTag := range b.dbTags {
-		builder.WriteString(dbTag)
+		builder.WriteString(b.TableName + "." + dbTag)
 		fieldIndexes = append(fieldIndexes, i)
 		if i < len(b.dbTags)-1 {
 			builder.WriteString(",")
@@ -413,8 +422,22 @@ func (b *BaseModel) GetSelectSQL() ([]int, string) {
 	return fieldIndexes, builder.String()
 }
 
+// id,name,create_at
+func (b *BaseModel) GetSelectFields() ([]int, string) {
+	builder := new(strings.Builder)
+	fieldIndexes := []int{}
+	for i, dbTag := range b.dbTags {
+		builder.WriteString(b.TableName + "." + dbTag)
+		fieldIndexes = append(fieldIndexes, i)
+		if i < len(b.dbTags)-1 {
+			builder.WriteString(",")
+		}
+	}
+	return fieldIndexes, builder.String()
+}
+
 // Insert inserts v (*struct or struct type)
-func (b *BaseModel) Insert(v interface{}) (interface{}, error) {
+func (b *BaseModel) Insert(v any) (any, error) {
 	//validate
 	value := reflect.ValueOf(v)
 	t := value.Type()
@@ -428,7 +451,7 @@ func (b *BaseModel) Insert(v interface{}) (interface{}, error) {
 
 	//args
 	argsIndex, query := b.GetInsertReturningSQL()
-	args := []interface{}{}
+	args := []any{}
 	for _, i := range argsIndex {
 		field := value.Field(i)
 		args = append(args, field.Interface())
@@ -445,11 +468,11 @@ func (b *BaseModel) Insert(v interface{}) (interface{}, error) {
 }
 
 // Find finds a document (*struct type) by id
-func (b *BaseModel) Find(id interface{}) (interface{}, error) {
+func (b *BaseModel) Find(id any) (any, error) {
 	//scan
 	v := reflect.New(b.Type)
 	fieldIndexes, query := b.GetSelectSQL()
-	fieldArgs := []interface{}{}
+	fieldArgs := []any{}
 	for _, i := range fieldIndexes {
 		fieldArgs = append(fieldArgs, v.Elem().Field(i).Addr().Interface())
 	}
@@ -466,7 +489,7 @@ func (b *BaseModel) Find(id interface{}) (interface{}, error) {
 }
 
 // FindWhere finds a document (*struct type) that matches 'where' condition
-func (b *BaseModel) FindWhere(where string, args ...interface{}) (interface{}, error) {
+func (b *BaseModel) FindWhere(where string, args ...any) (any, error) {
 	//where
 	where = toWhere(where)
 
@@ -474,7 +497,7 @@ func (b *BaseModel) FindWhere(where string, args ...interface{}) (interface{}, e
 	v := reflect.New(b.Type)
 	fieldIndexes, query := b.GetSelectSQL()
 	query = query + where
-	fieldArgs := []interface{}{}
+	fieldArgs := []any{}
 	for _, i := range fieldIndexes {
 		fieldArgs = append(fieldArgs, v.Elem().Field(i).Addr().Interface())
 	}
@@ -489,7 +512,7 @@ func (b *BaseModel) FindWhere(where string, args ...interface{}) (interface{}, e
 }
 
 // QueryWhere queries documents ([]*struct type) that matches 'where' condition
-func (b *BaseModel) QueryWhere(where string, args ...interface{}) (interface{}, error) {
+func (b *BaseModel) QueryWhere(where string, args ...any) (any, error) {
 	where = toWhere(where)
 
 	fieldIndexes, query := b.GetSelectSQL()
@@ -504,7 +527,7 @@ func (b *BaseModel) QueryWhere(where string, args ...interface{}) (interface{}, 
 	vs := reflect.MakeSlice(reflect.SliceOf(reflect.PtrTo(b.Type)), 0, 2)
 	for rows.Next() {
 		v := reflect.New(b.Type)
-		fieldArgs := []interface{}{}
+		fieldArgs := []any{}
 		for _, i := range fieldIndexes {
 			fieldArgs = append(fieldArgs, v.Elem().Field(i).Addr().Interface())
 		}
@@ -524,7 +547,41 @@ func (b *BaseModel) QueryWhere(where string, args ...interface{}) (interface{}, 
 	return vs.Interface(), nil
 }
 
-func (b *BaseModel) Exists(id interface{}) (bool, error) {
+// QueryWhere queries documents ([]*struct type) that matches 'where' condition
+func (b *BaseModel) Query(queryTrail string, args ...any) (any, error) {
+	fieldIndexes, query := b.GetSelectSQL()
+
+	//query
+	query = query + " " + queryTrail
+	rows, e := b.Pool.Query(context.Background(), query, args...)
+	if e != nil {
+		return nil, fmt.Errorf("%w:%s", e, query)
+	}
+
+	vs := reflect.MakeSlice(reflect.SliceOf(reflect.PtrTo(b.Type)), 0, 2)
+	for rows.Next() {
+		v := reflect.New(b.Type)
+		fieldArgs := []any{}
+		for _, i := range fieldIndexes {
+			fieldArgs = append(fieldArgs, v.Elem().Field(i).Addr().Interface())
+		}
+		e = rows.Scan(fieldArgs...)
+		if e != nil {
+			break
+		}
+		vs = reflect.Append(vs, v)
+	}
+
+	// check err
+	rows.Close()
+	if e = rows.Err(); e != nil {
+		return nil, e
+	}
+
+	return vs.Interface(), nil
+}
+
+func (b *BaseModel) Exists(id any) (bool, error) {
 	//scan
 	num := 0
 	query := `select 1 from ` + b.TableName + ` where ` + b.dbTags[0] + `=$1 limit 1`
@@ -538,7 +595,7 @@ func (b *BaseModel) Exists(id interface{}) (bool, error) {
 	return num > 0, nil
 }
 
-func (b *BaseModel) ExistsWhere(where string, args ...interface{}) (bool, error) {
+func (b *BaseModel) ExistsWhere(where string, args ...any) (bool, error) {
 	//where
 	where = toWhere(where)
 
@@ -555,7 +612,7 @@ func (b *BaseModel) ExistsWhere(where string, args ...interface{}) (bool, error)
 	return num > 0, nil
 }
 
-func (b *BaseModel) CountWhere(where string, args ...interface{}) (int64, error) {
+func (b *BaseModel) CountWhere(where string, args ...any) (int64, error) {
 	where = toWhere(where)
 
 	//scan
@@ -568,7 +625,7 @@ func (b *BaseModel) CountWhere(where string, args ...interface{}) (int64, error)
 	return num, nil
 }
 
-func (b *BaseModel) UpdateSet(where, sets string, args ...interface{}) (int64, error) {
+func (b *BaseModel) UpdateSet(where, sets string, args ...any) (int64, error) {
 	where = toWhere(where)
 	query := `update ` + b.TableName + ` set ` + sets + where
 	result, e := b.Pool.Exec(context.Background(), query, args...)
@@ -591,7 +648,7 @@ func (b *BaseModel) Truncate() error {
 	return b.Clear()
 }
 
-func (b *BaseModel) Delete(id interface{}) (int64, error) {
+func (b *BaseModel) Delete(id any) (int64, error) {
 	query := `delete from ` + b.TableName + ` where ` + b.dbTags[0] + `=$1`
 	result, e := b.Pool.Exec(context.Background(), query, id)
 	if e != nil {
@@ -600,7 +657,7 @@ func (b *BaseModel) Delete(id interface{}) (int64, error) {
 	return result.RowsAffected(), nil
 }
 
-func (b *BaseModel) DeleteWhere(where string, args ...interface{}) (int64, error) {
+func (b *BaseModel) DeleteWhere(where string, args ...any) (int64, error) {
 	where = toWhere(where)
 
 	query := `delete from ` + b.TableName + where
@@ -609,4 +666,60 @@ func (b *BaseModel) DeleteWhere(where string, args ...interface{}) (int64, error
 		return 0, fmt.Errorf("%w:%s", e, query)
 	}
 	return result.RowsAffected(), nil
+}
+
+func (b *BaseModel) FindAndUpdateSet(where, sets string, args ...any) (any, error) {
+	where = toWhere(where)
+	query := `update ` + b.TableName + ` set ` + sets + where
+	//scan
+	v := reflect.New(b.Type)
+	fieldIndexes, selection := b.GetSelectFields()
+	fieldArgs := []any{}
+	for _, i := range fieldIndexes {
+		fieldArgs = append(fieldArgs, v.Elem().Field(i).Addr().Interface())
+	}
+
+	query = query + ` returning ` + selection
+	e := b.Pool.QueryRow(context.Background(), query, args...).Scan(fieldArgs...)
+	if e != nil {
+		if strings.Contains(e.Error(), "no rows") {
+			return nil, sql.ErrNoRows
+		}
+		return nil, fmt.Errorf("%w:%s", e, query)
+	}
+	return v.Interface(), nil
+}
+
+func (b *BaseModel) QueryAndUpdateSet(where, sets string, args ...any) (any, error) {
+	where = toWhere(where)
+	query := `update ` + b.TableName + ` set ` + sets + where
+	//scan
+	fieldIndexes, selection := b.GetSelectFields()
+
+	query = query + ` returning ` + selection
+	rows, e := b.Pool.Query(context.Background(), query, args...)
+	if e != nil {
+		return nil, fmt.Errorf("%w:%s", e, query)
+	}
+	vs := reflect.MakeSlice(reflect.SliceOf(reflect.PtrTo(b.Type)), 0, 2)
+	for rows.Next() {
+		v := reflect.New(b.Type)
+		fieldArgs := []any{}
+		for _, i := range fieldIndexes {
+			fieldArgs = append(fieldArgs, v.Elem().Field(i).Addr().Interface())
+		}
+		e = rows.Scan(fieldArgs...)
+		if e != nil {
+			break
+		}
+		vs = reflect.Append(vs, v)
+	}
+
+	// check err
+	rows.Close()
+	if e = rows.Err(); e != nil {
+		return nil, e
+	}
+
+	return vs.Interface(), nil
 }
