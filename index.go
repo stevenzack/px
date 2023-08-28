@@ -162,7 +162,7 @@ func toIndexModels(indexes map[string]string) (*indexModel, []indexModel, error)
 }
 
 // createIndexFromField create index with format like: map[column_name]"single=asc,unique=true,lower=true,group=unique"
-func (b *BaseModel) createIndexFromField(imodels []indexModel) error {
+func (b *BaseModel[T]) createIndexFromField(imodels []indexModel) error {
 	if len(imodels) == 0 {
 		return nil
 	}
@@ -177,7 +177,7 @@ func (b *BaseModel) createIndexFromField(imodels []indexModel) error {
 	return nil
 }
 
-func (b *BaseModel) createIndex(imodel indexModel) error {
+func (b *BaseModel[T]) createIndex(imodel indexModel) error {
 	builder := new(strings.Builder)
 	builder.WriteString("create ")
 	if imodel.unique {
@@ -204,7 +204,7 @@ func (b *BaseModel) createIndex(imodel indexModel) error {
 	return nil
 }
 
-func (b *BaseModel) dropIndex(name string) error {
+func (b *BaseModel[T]) dropIndex(name string) error {
 	query := `drop index ` + name
 	_, e := b.Pool.Exec(context.Background(), query)
 	if e != nil {
@@ -213,7 +213,7 @@ func (b *BaseModel) dropIndex(name string) error {
 	return nil
 }
 
-func (b *BaseModel) GetIndexes() ([]IndexSchema, error) {
+func (b *BaseModel[T]) GetIndexes() ([]IndexSchema, error) {
 	rows, e := b.Pool.Query(context.Background(), `select schemaname,tablename,indexname,indexdef from pg_indexes where tablename=$1`, b.TableName)
 	if e != nil {
 		return nil, e

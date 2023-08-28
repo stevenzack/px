@@ -5,7 +5,7 @@ Simple PostgreSQL ORM extension for Golang
 # Install
 
 ```go
-go get -u github.com/StevenZack/pgx
+go get -u github.com/StevenZack/px
 ```
 
 # Example
@@ -23,11 +23,11 @@ import (
 )
 
 type User struct {
-	Id          uint32            `db:"id"`                                     // serial not null primary key
-	PhoneNumber sql.NullString    `db:"phone_number" limit:"36" index:"unique"` // varchar(36) unique index
-	Info        map[string]string `db:"info"`                                   // jsonb
-	UpdateTime  time.Time         `db:"update_time" index:""`
-	CreateTime  time.Time         `db:"create_time"`
+	Id          uint32                                               // serial not null primary key
+	PhoneNumber sql.NullString    `limit:"36" index:"unique"` // varchar(36) unique index
+	Info        map[string]string                                  // jsonb
+	UpdateTime  time.Time         `index:""`
+	CreateTime  time.Time         
 }
 
 func init() {
@@ -59,13 +59,4 @@ func main() {
 	fmt.Println(v)
 }
 
-```
-
-# Group primary key
-
-```go
-type Follow struct{
-	Id 	uint64 	`db:"id"`
-	Target	uint64	`db:"target" index:"group=pkey"` // primary key (id,target)
-}
 ```

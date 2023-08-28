@@ -6,18 +6,16 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net/url"
 	"reflect"
 	"strconv"
 	"strings"
 
 	"github.com/StevenZack/tools/strToolkit"
 	"github.com/iancoleman/strcase"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type BaseModel struct {
+type BaseModel[T any] struct {
 	Type      reflect.Type
 	Dsn       string
 	Pool      *pgxpool.Pool
@@ -34,45 +32,43 @@ const (
 )
 
 var (
-	AutoCheckTable = false
-	AutoDropColumn = false
+	AutoSyncTableSchema  = false
+	AutoDropRemoteColumn = false
 )
 
-func MustNewBaseModel(dsn string, data any) *BaseModel {
-	v, e := NewBaseModel(dsn, data)
+func MustNewBaseModel[T any](dsn string) *BaseModel[T] {
+	v, e := NewBaseModel[T](dsn)
 	if e != nil {
 		log.Fatal(e)
 	}
 	return v
 }
-func NewBaseModel(dsn string, data any) (*BaseModel, error) {
-	model, _, e := NewBaseModelWithCreated(dsn, data)
+func NewBaseModel[T any](dsn string) (*BaseModel[T], error) {
+	model, _, e := NewBaseModelWithCreated[T](dsn)
 	return model, e
 }
 
-func NewBaseModelWithCreated(dsn string, data any) (*BaseModel, bool, error) {
+func NewBaseModelWithCreated[T any](dsn string) (*BaseModel[T], bool, error) {
+	dsn = strings.ReplaceAll(dsn, "postgresql://", "postgres://")
 	created := false
+	var data T
 	t := reflect.TypeOf(data)
-	dsnURL, e := url.Parse(dsn)
-	if e != nil {
-		log.Println(e, dsn)
-		return nil, false, e
-	}
 
-	model := &BaseModel{
+	model := &BaseModel[T]{
 		Dsn:       dsn,
 		Type:      t,
-		Database:  strings.TrimLeft(dsnURL.Path, "/"),
+		Database:  strToolkit.SubAfterLast(dsn, "/", ""),
 		Schema:    "public",
 		TableName: ToTableName(t.Name()),
 	}
 
 	//validate
 	if model.Database == "" {
-		return nil, false, errors.New("dsn: dbname is not set")
+		return nil, false, errors.New("invalid dsn ")
 	}
 
 	//pool
+	var e error
 	model.Pool, e = pgxpool.New(context.Background(), dsn)
 	if e != nil {
 		log.Println(e)
@@ -101,15 +97,9 @@ func NewBaseModelWithCreated(dsn string, data any) (*BaseModel, bool, error) {
 		}
 
 		//dbTag
-		dbTag, ok := field.Tag.Lookup("db")
-		if !ok {
-			return nil, false, errors.New("field " + field.Name + " has no `db` tag specified")
-		}
+		dbTag := strcase.ToSnake(field.Name)
 		if i == 0 && dbTag != "id" {
-			return nil, false, errors.New("The first field's `db` tag must be id")
-		}
-		if dbTag != strcase.ToSnake(dbTag) {
-			return nil, false, errors.New("Field '" + field.Name + "'s `db` tag is not in snake case")
+			return nil, false, errors.New("The first field's name must be Id or ID")
 		}
 
 		//index
@@ -151,39 +141,12 @@ func NewBaseModelWithCreated(dsn string, data any) (*BaseModel, bool, error) {
 		return nil, false, e
 	}
 
-	if AutoCheckTable {
-
+	if AutoSyncTableSchema {
 		//desc
 		remoteColumnList, e := DescTable(model.Pool, model.Database, model.Schema, model.TableName)
 		if e != nil {
-			if !strings.Contains(e.Error(), fmt.Sprintf(`database "%s" does not exist`, model.Database)) {
-				log.Println(e)
-				return nil, false, e
-			}
-			// database not exists
-			dsnURL.Path = "/postgres"
-			pool, e := pgx.Connect(context.Background(), dsnURL.String())
-			if e != nil {
-				log.Println(e)
-				return nil, false, e
-			}
-			s := "create database " + model.Database
-			_, e = pool.Exec(context.Background(), s)
-			if e != nil {
-				log.Println(e)
-				return nil, false, e
-			}
-			e = pool.Close(context.Background())
-			if e != nil {
-				log.Println(e)
-				return nil, false, e
-			}
-
-			model.Pool, e = pgxpool.New(context.Background(), dsn)
-			if e != nil {
-				log.Println(e)
-				return nil, false, e
-			}
+			log.Println(e)
+			return nil, false, e
 		}
 
 		//create table
@@ -243,7 +206,7 @@ func NewBaseModelWithCreated(dsn string, data any) (*BaseModel, bool, error) {
 		for _, remote := range remoteColumnList {
 			_, ok := localColumns[remote.ColumnName]
 			if !ok {
-				if AutoDropColumn {
+				if AutoDropRemoteColumn {
 					//auto-drop remote column
 					log.Println("Remote column '" + remote.ColumnName + "' to be dropped")
 					e = model.dropColumn(remote.ColumnName)
@@ -316,7 +279,7 @@ func NewBaseModelWithCreated(dsn string, data any) (*BaseModel, bool, error) {
 	return model, created, nil
 }
 
-func (b *BaseModel) createTable(primaryKeyModel *indexModel) error {
+func (b *BaseModel[T]) createTable(primaryKeyModel *indexModel) error {
 	query := b.GetCreateTableSQL(primaryKeyModel)
 	_, e := b.Pool.Exec(context.Background(), query)
 	if e != nil {
@@ -325,7 +288,7 @@ func (b *BaseModel) createTable(primaryKeyModel *indexModel) error {
 	return nil
 }
 
-func (b *BaseModel) addColumn(name, typ string) error {
+func (b *BaseModel[T]) addColumn(name, typ string) error {
 	_, e := b.Pool.Exec(context.Background(), `alter table `+b.Schema+`.`+b.TableName+` add column `+name+` `+typ)
 	if e != nil {
 		log.Println(e)
@@ -334,7 +297,7 @@ func (b *BaseModel) addColumn(name, typ string) error {
 	return e
 }
 
-func (b *BaseModel) dropColumn(name string) error {
+func (b *BaseModel[T]) dropColumn(name string) error {
 	_, e := b.Pool.Exec(context.Background(), `alter table `+b.Schema+`.`+b.TableName+` drop column `+name)
 	if e != nil {
 		log.Println(e)
@@ -343,7 +306,7 @@ func (b *BaseModel) dropColumn(name string) error {
 	return nil
 }
 
-func (b *BaseModel) GetCreateTableSQL(primaryKeyModel *indexModel) string {
+func (b *BaseModel[T]) GetCreateTableSQL(primaryKeyModel *indexModel) string {
 	builder := new(strings.Builder)
 	builder.WriteString(`create table ` + b.Schema + `.` + b.TableName + ` (`)
 	for i, dbTag := range b.dbTags {
@@ -365,7 +328,7 @@ func (b *BaseModel) GetCreateTableSQL(primaryKeyModel *indexModel) string {
 }
 
 // GetInsertSQL returns insert SQL without returning id
-func (b *BaseModel) GetInsertSQL() ([]int, string) {
+func (b *BaseModel[T]) GetInsertSQL() ([]int, string) {
 	builder := new(strings.Builder)
 	builder.WriteString(`insert into ` + b.Schema + `.` + b.TableName + ` (`)
 
@@ -401,13 +364,13 @@ func (b *BaseModel) GetInsertSQL() ([]int, string) {
 }
 
 // GetInsertReturningSQL returns insert SQL with returning id
-func (b *BaseModel) GetInsertReturningSQL() ([]int, string) {
+func (b *BaseModel[T]) GetInsertReturningSQL() ([]int, string) {
 	argsIndex, query := b.GetInsertSQL()
 	return argsIndex, query + " returning " + b.dbTags[0]
 }
 
 // GetSelectSQL returns fieldIndexes, and select SQL
-func (b *BaseModel) GetSelectSQL() ([]int, string) {
+func (b *BaseModel[T]) GetSelectSQL() ([]int, string) {
 	builder := new(strings.Builder)
 	builder.WriteString(`select `)
 	fieldIndexes := []int{}
@@ -423,7 +386,7 @@ func (b *BaseModel) GetSelectSQL() ([]int, string) {
 }
 
 // id,name,create_at
-func (b *BaseModel) GetSelectFields() ([]int, string) {
+func (b *BaseModel[T]) GetSelectFields() ([]int, string) {
 	builder := new(strings.Builder)
 	fieldIndexes := []int{}
 	for i, dbTag := range b.dbTags {
@@ -437,7 +400,7 @@ func (b *BaseModel) GetSelectFields() ([]int, string) {
 }
 
 // Insert inserts v (*struct or struct type)
-func (b *BaseModel) Insert(v any) (any, error) {
+func (b *BaseModel[T]) Insert(v T) (any, error) {
 	//validate
 	value := reflect.ValueOf(v)
 	t := value.Type()
@@ -468,7 +431,7 @@ func (b *BaseModel) Insert(v any) (any, error) {
 }
 
 // Find finds a document (*struct type) by id
-func (b *BaseModel) Find(id any) (any, error) {
+func (b *BaseModel[T]) Find(id any) (*T, error) {
 	//scan
 	v := reflect.New(b.Type)
 	fieldIndexes, query := b.GetSelectSQL()
@@ -485,11 +448,11 @@ func (b *BaseModel) Find(id any) (any, error) {
 		}
 		return nil, fmt.Errorf("%w:%s", e, query)
 	}
-	return v.Interface(), nil
+	return v.Interface().(*T), nil
 }
 
 // FindWhere finds a document (*struct type) that matches 'where' condition
-func (b *BaseModel) FindWhere(where string, args ...any) (any, error) {
+func (b *BaseModel[T]) FindWhere(where string, args ...any) (*T, error) {
 	//where
 	where = toWhere(where)
 
@@ -508,11 +471,11 @@ func (b *BaseModel) FindWhere(where string, args ...any) (any, error) {
 		}
 		return nil, fmt.Errorf("%w:%s", e, query)
 	}
-	return v.Interface(), nil
+	return v.Interface().(*T), nil
 }
 
 // QueryWhere queries documents ([]*struct type) that matches 'where' condition
-func (b *BaseModel) QueryWhere(where string, args ...any) (any, error) {
+func (b *BaseModel[T]) QueryWhere(where string, args ...any) ([]T, error) {
 	where = toWhere(where)
 
 	fieldIndexes, query := b.GetSelectSQL()
@@ -535,7 +498,7 @@ func (b *BaseModel) QueryWhere(where string, args ...any) (any, error) {
 		if e != nil {
 			break
 		}
-		vs = reflect.Append(vs, v)
+		vs = reflect.Append(vs, v.Elem())
 	}
 
 	// check err
@@ -544,11 +507,11 @@ func (b *BaseModel) QueryWhere(where string, args ...any) (any, error) {
 		return nil, e
 	}
 
-	return vs.Interface(), nil
+	return vs.Interface().([]T), nil
 }
 
 // QueryWhere queries documents ([]*struct type) that matches 'where' condition
-func (b *BaseModel) Query(queryTrail string, args ...any) (any, error) {
+func (b *BaseModel[T]) Query(queryTrail string, args ...any) ([]T, error) {
 	fieldIndexes, query := b.GetSelectSQL()
 
 	//query
@@ -569,7 +532,7 @@ func (b *BaseModel) Query(queryTrail string, args ...any) (any, error) {
 		if e != nil {
 			break
 		}
-		vs = reflect.Append(vs, v)
+		vs = reflect.Append(vs, v.Elem())
 	}
 
 	// check err
@@ -578,10 +541,10 @@ func (b *BaseModel) Query(queryTrail string, args ...any) (any, error) {
 		return nil, e
 	}
 
-	return vs.Interface(), nil
+	return vs.Interface().([]T), nil
 }
 
-func (b *BaseModel) Exists(id any) (bool, error) {
+func (b *BaseModel[T]) Exists(id any) (bool, error) {
 	//scan
 	num := 0
 	query := `select 1 from ` + b.TableName + ` where ` + b.dbTags[0] + `=$1 limit 1`
@@ -595,7 +558,7 @@ func (b *BaseModel) Exists(id any) (bool, error) {
 	return num > 0, nil
 }
 
-func (b *BaseModel) ExistsWhere(where string, args ...any) (bool, error) {
+func (b *BaseModel[T]) ExistsWhere(where string, args ...any) (bool, error) {
 	//where
 	where = toWhere(where)
 
@@ -612,7 +575,7 @@ func (b *BaseModel) ExistsWhere(where string, args ...any) (bool, error) {
 	return num > 0, nil
 }
 
-func (b *BaseModel) CountWhere(where string, args ...any) (int64, error) {
+func (b *BaseModel[T]) CountWhere(where string, args ...any) (int64, error) {
 	where = toWhere(where)
 
 	//scan
@@ -625,7 +588,7 @@ func (b *BaseModel) CountWhere(where string, args ...any) (int64, error) {
 	return num, nil
 }
 
-func (b *BaseModel) UpdateSet(where, sets string, args ...any) (int64, error) {
+func (b *BaseModel[T]) UpdateSet(where, sets string, args ...any) (int64, error) {
 	where = toWhere(where)
 	query := `update ` + b.TableName + ` set ` + sets + where
 	result, e := b.Pool.Exec(context.Background(), query, args...)
@@ -635,7 +598,7 @@ func (b *BaseModel) UpdateSet(where, sets string, args ...any) (int64, error) {
 	return result.RowsAffected(), nil
 }
 
-func (b *BaseModel) Clear() error {
+func (b *BaseModel[T]) Clear() error {
 	query := `truncate table ` + b.TableName
 	_, e := b.Pool.Exec(context.Background(), query)
 	if e != nil {
@@ -644,11 +607,11 @@ func (b *BaseModel) Clear() error {
 	return nil
 }
 
-func (b *BaseModel) Truncate() error {
+func (b *BaseModel[T]) Truncate() error {
 	return b.Clear()
 }
 
-func (b *BaseModel) Delete(id any) (int64, error) {
+func (b *BaseModel[T]) Delete(id any) (int64, error) {
 	query := `delete from ` + b.TableName + ` where ` + b.dbTags[0] + `=$1`
 	result, e := b.Pool.Exec(context.Background(), query, id)
 	if e != nil {
@@ -657,7 +620,7 @@ func (b *BaseModel) Delete(id any) (int64, error) {
 	return result.RowsAffected(), nil
 }
 
-func (b *BaseModel) DeleteWhere(where string, args ...any) (int64, error) {
+func (b *BaseModel[T]) DeleteWhere(where string, args ...any) (int64, error) {
 	where = toWhere(where)
 
 	query := `delete from ` + b.TableName + where
@@ -668,7 +631,7 @@ func (b *BaseModel) DeleteWhere(where string, args ...any) (int64, error) {
 	return result.RowsAffected(), nil
 }
 
-func (b *BaseModel) FindAndUpdateSet(where, sets string, args ...any) (any, error) {
+func (b *BaseModel[T]) FindAndUpdateSet(where, sets string, args ...any) (*T, error) {
 	where = toWhere(where)
 	query := `update ` + b.TableName + ` set ` + sets + where
 	//scan
@@ -687,10 +650,10 @@ func (b *BaseModel) FindAndUpdateSet(where, sets string, args ...any) (any, erro
 		}
 		return nil, fmt.Errorf("%w:%s", e, query)
 	}
-	return v.Interface(), nil
+	return v.Interface().(*T), nil
 }
 
-func (b *BaseModel) QueryAndUpdateSet(where, sets string, args ...any) (any, error) {
+func (b *BaseModel[T]) QueryAndUpdateSet(where, sets string, args ...any) ([]T, error) {
 	where = toWhere(where)
 	query := `update ` + b.TableName + ` set ` + sets + where
 	//scan
@@ -712,7 +675,7 @@ func (b *BaseModel) QueryAndUpdateSet(where, sets string, args ...any) (any, err
 		if e != nil {
 			break
 		}
-		vs = reflect.Append(vs, v)
+		vs = reflect.Append(vs, v.Elem())
 	}
 
 	// check err
@@ -721,5 +684,5 @@ func (b *BaseModel) QueryAndUpdateSet(where, sets string, args ...any) (any, err
 		return nil, e
 	}
 
-	return vs.Interface(), nil
+	return vs.Interface().([]T), nil
 }
