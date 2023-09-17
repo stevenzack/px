@@ -474,7 +474,7 @@ func (b *BaseModel[T]) FindWhere(where string, args ...any) (*T, error) {
 	return v.Interface().(*T), nil
 }
 
-// QueryWhere queries documents ([]*struct type) that matches 'where' condition
+// QueryWhere queries documents ([]struct type) that matches 'where' condition
 func (b *BaseModel[T]) QueryWhere(where string, args ...any) ([]T, error) {
 	where = toWhere(where)
 
@@ -487,7 +487,7 @@ func (b *BaseModel[T]) QueryWhere(where string, args ...any) ([]T, error) {
 		return nil, fmt.Errorf("%w:%s", e, query)
 	}
 
-	vs := reflect.MakeSlice(reflect.SliceOf(reflect.PtrTo(b.Type)), 0, 2)
+	vs := reflect.MakeSlice(reflect.SliceOf(b.Type), 0, 2)
 	for rows.Next() {
 		v := reflect.New(b.Type)
 		fieldArgs := []any{}
@@ -510,7 +510,7 @@ func (b *BaseModel[T]) QueryWhere(where string, args ...any) ([]T, error) {
 	return vs.Interface().([]T), nil
 }
 
-// QueryWhere queries documents ([]*struct type) that matches 'where' condition
+// QueryWhere queries documents ([]struct type) that matches 'where' condition
 func (b *BaseModel[T]) Query(queryTrail string, args ...any) ([]T, error) {
 	fieldIndexes, query := b.GetSelectSQL()
 
@@ -521,7 +521,7 @@ func (b *BaseModel[T]) Query(queryTrail string, args ...any) ([]T, error) {
 		return nil, fmt.Errorf("%w:%s", e, query)
 	}
 
-	vs := reflect.MakeSlice(reflect.SliceOf(reflect.PtrTo(b.Type)), 0, 2)
+	vs := reflect.MakeSlice(reflect.SliceOf(b.Type), 0, 2)
 	for rows.Next() {
 		v := reflect.New(b.Type)
 		fieldArgs := []any{}
@@ -664,7 +664,7 @@ func (b *BaseModel[T]) QueryAndUpdateSet(where, sets string, args ...any) ([]T, 
 	if e != nil {
 		return nil, fmt.Errorf("%w:%s", e, query)
 	}
-	vs := reflect.MakeSlice(reflect.SliceOf(reflect.PtrTo(b.Type)), 0, 2)
+	vs := reflect.MakeSlice(reflect.SliceOf(b.Type), 0, 2)
 	for rows.Next() {
 		v := reflect.New(b.Type)
 		fieldArgs := []any{}
