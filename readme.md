@@ -5,7 +5,7 @@ Simple PostgreSQL ORM extension for Golang
 # Install
 
 ```go
-go get -u github.com/StevenZack/px
+go get -u github.com/stevenzack/px
 ```
 
 # Example
@@ -19,7 +19,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/StevenZack/px"
+	"github.com/stevenzack/px"
 )
 
 type User struct {

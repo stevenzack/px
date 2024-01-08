@@ -1,12 +1,12 @@
-module github.com/StevenZack/px
+module github.com/stevenzack/px
 
-go 1.21
+go 1.22rc1
 
 require (
-	github.com/StevenZack/tools v1.15.0
 	github.com/gertd/go-pluralize v0.2.1
-	github.com/iancoleman/strcase v0.1.3
-	github.com/jackc/pgx/v5 v5.4.3
+	github.com/iancoleman/strcase v0.3.0
+	github.com/jackc/pgx/v5 v5.5.1
+	github.com/stevenzack/tools v1.17.0
 )
 
 require (

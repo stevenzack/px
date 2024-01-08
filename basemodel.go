@@ -10,9 +10,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/StevenZack/tools/strToolkit"
 	"github.com/iancoleman/strcase"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/stevenzack/tools/strToolkit"
 )
 
 type BaseModel[T any] struct {

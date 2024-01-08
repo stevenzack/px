@@ -4,7 +4,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/StevenZack/tools/strToolkit"
+	"github.com/stevenzack/tools/strToolkit"
 )
 
 func ParseDsn(s string) (map[string]string, error) {

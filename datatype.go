@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/StevenZack/tools/strToolkit"
+	"github.com/stevenzack/tools/strToolkit"
 )
 
 func ToPostgreType(t reflect.Type, dbTag string, length, limit int) (string, error) {

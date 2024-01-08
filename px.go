@@ -3,9 +3,9 @@ package px
 import (
 	"strings"
 
-	"github.com/StevenZack/tools/strToolkit"
 	"github.com/gertd/go-pluralize"
 	"github.com/iancoleman/strcase"
+	"github.com/stevenzack/tools/strToolkit"
 )
 
 var (
